@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="880" viewBox="0 0 1180 880" font-family="DejaVu Sans, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1L9 5L1 9" fill="none" stroke="#4a5568" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1L9 5L1 9" fill="none" stroke="#9aa5b1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .ttl  { font-size: 21px; font-weight: 700; fill: #1a202c; }
+      .sec  { font-size: 14px; font-weight: 700; fill: #4a5568; letter-spacing: .04em; }
+      .nm   { font-size: 14.5px; font-weight: 700; fill: #1a202c; }
+      .sm   { font-size: 11.5px; fill: #4a5568; }
+      .tag  { font-size: 10.5px; fill: #718096; font-style: italic; }
+      .edge { stroke: #4a5568; stroke-width: 1.8; fill: none; }
+      .edgeg{ stroke: #9aa5b1; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+      .grp  { fill: none; stroke: #cbd5e0; stroke-width: 1.2; stroke-dasharray: 6 5; }
+    </style>
+  </defs>
+
+  <rect width="1180" height="880" fill="#ffffff"/>
+  <text class="ttl" x="40" y="44">JEPA World Model — архитектура</text>
+  <text class="sm" x="40" y="66">Латент 128-d · вход 1×64×64 · действие 2-d · ядро 821K параметров</text>
+
+  <!-- ============ БЛОК 1: ЯДРО ============ -->
+  <rect class="grp" x="32" y="92" width="1116" height="242" rx="12"/>
+  <text class="sec" x="48" y="116">1 · ЯДРО: ПРЕДСТАВЛЕНИЕ И ДИНАМИКА</text>
+
+  <!-- кадр -->
+  <rect x="54" y="140" width="150" height="66" rx="9" fill="#f7fafc" stroke="#a0aec0" stroke-width="1.4"/>
+  <text class="nm" x="129" y="168" text-anchor="middle">Кадр o_t</text>
+  <text class="sm" x="129" y="188" text-anchor="middle">1 × 64 × 64</text>
+
+  <!-- энкодер -->
+  <rect x="248" y="132" width="212" height="82" rx="9" fill="#e6fffa" stroke="#38b2ac" stroke-width="1.6"/>
+  <text class="nm" x="354" y="157" text-anchor="middle">Энкодер (CNN)</text>
+  <text class="sm" x="354" y="177" text-anchor="middle">4 × Conv 4×4 stride 2 → FC</text>
+  <text class="tag" x="354" y="196" text-anchor="middle">689 120 параметров</text>
+
+  <!-- латент -->
+  <rect x="504" y="140" width="132" height="66" rx="9" fill="#e6fffa" stroke="#38b2ac" stroke-width="1.6"/>
+  <text class="nm" x="570" y="168" text-anchor="middle">Латент z_t</text>
+  <text class="sm" x="570" y="188" text-anchor="middle">128-d</text>
+
+  <!-- предиктор -->
+  <rect x="700" y="124" width="248" height="98" rx="9" fill="#faf5ff" stroke="#805ad5" stroke-width="1.6"/>
+  <text class="nm" x="824" y="150" text-anchor="middle">Предиктор динамики</text>
+  <text class="sm" x="824" y="170" text-anchor="middle">z_{t+1} = z_t + f(z_t, a_t)</text>
+  <text class="tag" x="824" y="189" text-anchor="middle">MLP 132K · GRU 429K (с памятью h_t)</text>
+  <text class="sm" x="824" y="209" text-anchor="middle">→ ẑ_{t+1}</text>
+
+  <!-- действие -->
+  <rect x="504" y="248" width="132" height="56" rx="9" fill="#f7fafc" stroke="#a0aec0" stroke-width="1.4"/>
+  <text class="nm" x="570" y="270" text-anchor="middle">Действие a_t</text>
+  <text class="sm" x="570" y="289" text-anchor="middle">2-d, [-1, 1]</text>
+
+  <!-- VICReg -->
+  <rect x="988" y="140" width="140" height="150" rx="9" fill="#fff5f5" stroke="#e53e3e" stroke-width="1.6"/>
+  <text class="nm" x="1058" y="166" text-anchor="middle">VICReg</text>
+  <text class="sm" x="1058" y="189" text-anchor="middle">25 · inv</text>
+  <text class="sm" x="1058" y="209" text-anchor="middle">25 · var</text>
+  <text class="sm" x="1058" y="229" text-anchor="middle">1 · cov</text>
+  <text class="tag" x="1058" y="255" text-anchor="middle">лосс в латенте,</text>
+  <text class="tag" x="1058" y="271" text-anchor="middle">не в пикселях</text>
+
+  <!-- target ветвь -->
+  <rect x="700" y="248" width="248" height="56" rx="9" fill="#e6fffa" stroke="#38b2ac" stroke-width="1.4"/>
+  <text class="sm" x="824" y="270" text-anchor="middle">Энкодер(o_{t+1}) → z_{t+1}</text>
+  <text class="tag" x="824" y="289" text-anchor="middle">цель предсказания (те же веса)</text>
+
+  <line class="edge" x1="206" y1="173" x2="244" y2="173" marker-end="url(#ar)"/>
+  <line class="edge" x1="462" y1="173" x2="500" y2="173" marker-end="url(#ar)"/>
+  <line class="edge" x1="638" y1="173" x2="696" y2="173" marker-end="url(#ar)"/>
+  <line class="edge" x1="638" y1="276" x2="696" y2="276" marker-end="url(#ar)"/>
+  <path class="edge" d="M636 276 L668 276 L668 200 L696 200" marker-end="url(#ar)"/>
+  <line class="edge" x1="950" y1="173" x2="984" y2="173" marker-end="url(#ar)"/>
+  <path class="edge" d="M950 276 L968 276 L968 215 L984 215" marker-end="url(#ar)"/>
+
+  <!-- ============ БЛОК 2: ВСПОМОГАТЕЛЬНЫЕ ============ -->
+  <rect class="grp" x="32" y="358" width="1116" height="170" rx="12"/>
+  <text class="sec" x="48" y="382">2 · МОДУЛИ НА ЗАМОРОЖЕННОМ ЭНКОДЕРЕ (не влияют на представление)</text>
+
+  <rect x="54" y="400" width="330" height="106" rx="9" fill="#faf5ff" stroke="#805ad5" stroke-width="1.6"/>
+  <text class="nm" x="219" y="426" text-anchor="middle">Temporal-distance d(z, z′)</text>
+  <text class="sm" x="219" y="447" text-anchor="middle">MLP 132K · цель = число шагов</text>
+  <text class="sm" x="219" y="467" text-anchor="middle">симметричная, Softplus ≥ 0</text>
+  <text class="tag" x="219" y="489" text-anchor="middle">заменяет L2 в планировании (r: 0.67 → 0.86)</text>
+
+  <rect x="416" y="400" width="330" height="106" rx="9" fill="#faf5ff" stroke="#805ad5" stroke-width="1.6"/>
+  <text class="nm" x="581" y="426" text-anchor="middle">Ансамбль предикторов</text>
+  <text class="sm" x="581" y="447" text-anchor="middle">K = 5, бутстрап-подвыборки</text>
+  <text class="sm" x="581" y="467" text-anchor="middle">разброс = эпистемическая неуверенность</text>
+  <text class="tag" x="581" y="489" text-anchor="middle">корреляция с реальной ошибкой r ≈ 0.98</text>
+
+  <rect x="778" y="400" width="350" height="106" rx="9" fill="#e6fffa" stroke="#38b2ac" stroke-width="1.6"/>
+  <text class="nm" x="953" y="426" text-anchor="middle">Декодер (диагностический probe)</text>
+  <text class="sm" x="953" y="447" text-anchor="middle">4 × ConvTranspose · 691K</text>
+  <text class="sm" x="953" y="467" text-anchor="middle">латент → 64 × 64</text>
+  <text class="tag" x="953" y="489" text-anchor="middle">визуализация «снов» модели</text>
+
+  <path class="edgeg" d="M570 212 L570 232 L40 232 L40 452 L50 452" marker-end="url(#arg)"/>
+
+  <!-- ============ БЛОК 3: ПЛАНИРОВАНИЕ ============ -->
+  <rect class="grp" x="32" y="552" width="1116" height="286" rx="12"/>
+  <text class="sec" x="48" y="576">3 · ПЛАНИРОВАНИЕ: ЦЕЛЬ ЗАДАЁТСЯ ИЗОБРАЖЕНИЕМ</text>
+
+  <rect x="54" y="600" width="176" height="76" rx="9" fill="#f7fafc" stroke="#a0aec0" stroke-width="1.4"/>
+  <text class="nm" x="142" y="628" text-anchor="middle">Целевой кадр</text>
+  <text class="sm" x="142" y="649" text-anchor="middle">o_goal → z_goal</text>
+
+  <rect x="278" y="588" width="286" height="100" rx="9" fill="#fff5f5" stroke="#e53e3e" stroke-width="1.6"/>
+  <text class="nm" x="421" y="614" text-anchor="middle">CEM в воображении</text>
+  <text class="sm" x="421" y="635" text-anchor="middle">512 кандидатов × 5 итераций</text>
+  <text class="sm" x="421" y="655" text-anchor="middle">элита 64 · горизонт 5–15</text>
+  <text class="tag" x="421" y="676" text-anchor="middle">прокатка через предиктор, без среды</text>
+
+  <rect x="612" y="600" width="176" height="76" rx="9" fill="#faf5ff" stroke="#805ad5" stroke-width="1.6"/>
+  <text class="nm" x="700" y="622" text-anchor="middle">Стоимость</text>
+  <text class="sm" x="700" y="643" text-anchor="middle">d(z_T, z_goal)</text>
+  <text class="tag" x="700" y="663" text-anchor="middle">обученная метрика</text>
+
+  <rect x="836" y="600" width="140" height="76" rx="9" fill="#f7fafc" stroke="#a0aec0" stroke-width="1.4"/>
+  <text class="nm" x="906" y="628" text-anchor="middle">MPC</text>
+  <text class="sm" x="906" y="649" text-anchor="middle">1-е действие</text>
+
+  <rect x="1012" y="600" width="116" height="76" rx="9" fill="#f7fafc" stroke="#a0aec0" stroke-width="1.4"/>
+  <text class="nm" x="1070" y="638" text-anchor="middle">Среда</text>
+
+  <line class="edge" x1="232" y1="638" x2="274" y2="638" marker-end="url(#ar)"/>
+  <line class="edge" x1="566" y1="638" x2="608" y2="638" marker-end="url(#ar)"/>
+  <line class="edge" x1="790" y1="638" x2="832" y2="638" marker-end="url(#ar)"/>
+  <line class="edge" x1="978" y1="638" x2="1008" y2="638" marker-end="url(#ar)"/>
+  <path class="edge" d="M1070 678 L1070 716 L421 716 L421 692" marker-end="url(#ar)"/>
+  <text class="sm" x="745" y="736" text-anchor="middle">новое наблюдение → перепланирование на каждом шаге</text>
+
+  <rect x="278" y="756" width="850" height="62" rx="9" fill="#f7fafc" stroke="#cbd5e0" stroke-width="1.2"/>
+  <text class="sm" x="298" y="779">Валидация: linear probe R² = 0.999 · action gap = 0.94 · z-std ≈ 0.99 (нет коллапса)</text>
+  <text class="sm" x="298" y="801">Память (GRU) нужна только при частичной наблюдаемости: probe R² 0.821 → 0.898; на полной среде прироста нет</text>
+</svg>

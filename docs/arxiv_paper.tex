@@ -1,0 +1,213 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{times}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{authblk}
+
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+
+\title{When Does Hierarchical Abstraction in World Models Actually Learn Anything?\\
+\large A Controlled Diagnostic Study}
+
+\author[1]{Regina Nam}
+\affil[1]{Ionosphere Institute}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Hierarchical predictive architectures such as H-JEPA \citep{lecun2022path} propose learning abstractions at multiple temporal and spatial scales, but the proposal is architectural rather than algorithmic: it specifies neither a training objective for the abstract level nor a way to verify that a trained abstraction encodes anything a random projection of the same shape would not. We introduce a diagnostic protocol built around a \emph{random-abstractor control} --- comparing a trained top level against an identically-parameterized but untrained one --- and apply it across a $2\times2$ design crossing observability (full vs.\ egocentric) with abstractor type (instantaneous vs.\ recurrent) in controlled gridworld environments with exact ground truth at both scales. Three of four conditions yield abstractions that are statistically indistinguishable from random projections (or slightly worse), for two distinct reasons: under full observability the abstraction has nothing to add, since the slow variable is already linearly decodable from the fast level; under partial observability an instantaneous abstractor lacks any mechanism to integrate the history required to recover it. Only the combination of partial observability and a recurrent abstractor produces a measurably learned abstraction, replicated across 3 seeds (top-level probe accuracy gap over random: $19.91\pm3.36$pp, vs.\ $0.83\pm0.17$pp under full observability). We further report a negative result: attempts to establish a quantitative relationship between the density of persistent visual landmarks and abstraction quality in an open-world setting did not survive multi-seed replication, despite a promising single-run trend. Our results give an empirical account of \emph{why} architectures such as DreamerV3's RSSM \citep{hafner2023dreamerv3} combine a recurrent deterministic state with an instantaneous latent, and provide a reusable diagnostic that we argue should accompany any claim that a hierarchical model has learned a meaningful abstraction.
+\end{abstract}
+
+\section{Introduction}
+
+Predicting in representation space rather than pixel space is the core commitment of the JEPA family of world models \citep{lecun2022path}: rather than reconstructing future observations, the model learns to predict future \emph{embeddings}, avoiding spending capacity on unpredictable detail. This principle has been demonstrated at scale for static images \citep{assran2023ijepa} and video \citep{bardes2024vjepa}. LeCun's 2022 position paper extends the idea to H-JEPA --- a hierarchical variant predicting at multiple temporal and spatial scales, with a slow abstract level providing context to a fast local one.
+
+H-JEPA is presented as a normative blueprint. It does not specify a concrete training loss for the abstract level, a probabilistic semantics, or a training algorithm --- and, critically for empirical work, it does not specify how one would \emph{check} that a trained hierarchical model has learned a meaningful abstraction rather than a decorative one. This gap matters because hierarchical models are known to be prone to a specific failure: the lower level solves the task alone, gradients through the upper level become uninformative, and aggregate metrics still look healthy because the lower level carries them.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+\item A diagnostic protocol for hierarchical world models centered on a \emph{random-abstractor control}, plus two supporting diagnostics (level-use ablation and equal-capacity differential probing).
+\item A $2\times2$ empirical study crossing observability with abstractor type, showing that three of four conditions produce abstractions statistically indistinguishable from random projections --- for two structurally different reasons.
+\item An honest negative result on landmark density in open-world settings, including the methodological failure mode (a convincing trend on single runs that did not survive seed replication) that produced it.
+\end{enumerate}
+
+\section{Related Work}
+
+\textbf{Self-supervised predictive representation learning.} VICReg \citep{bardes2021vicreg} regularizes joint-embedding representations via variance and covariance penalties to prevent collapse without negative pairs or a momentum target, and is the loss we build on throughout. I-JEPA \citep{assran2023ijepa} and V-JEPA \citep{bardes2024vjepa} demonstrate that predicting masked regions in representation space, rather than pixel space, yields semantic representations at scale for images and video respectively.
+
+\textbf{Model-based RL with latent dynamics.} The Dreamer line of work \citep{hafner2023dreamerv3} learns a recurrent state-space model (RSSM) combining a deterministic recurrent state with a stochastic latent, and trains behavior entirely inside imagined rollouts. DreamerV3's architectural choice --- pairing recurrence with an instantaneous component --- is stated without an ablation isolating why recurrence is needed; our controlled study provides one candidate empirical explanation.
+
+\textbf{Hierarchical abstraction.} H-JEPA \citep{lecun2022path} proposes hierarchical joint-embedding prediction as a path toward multi-timescale reasoning but leaves the training procedure and verification method unspecified. We are not aware of prior work that isolates whether a trained hierarchical abstraction is distinguishable from a random projection of the same architecture.
+
+\section{Method}
+
+\subsection{Environments}
+
+All environments render $64\times64$ grayscale observations and expose ground truth at two scales, enabling exact probing of both levels.
+
+\textbf{Building ($3\times3$ rooms).} A point agent moves in a grid of nine rooms connected by doorways. The \emph{fast} variable is position within the current room; the \emph{slow} variable is room identity, which changes rarely (empirically $\sim$2 transitions per 75 steps under a random inertial policy). Two observation modes: \texttt{full} (top-down view of the whole map) and \texttt{ego} (a window cropped around the agent, so rooms are mutually indistinguishable from a single frame and room identity is only recoverable by integrating history).
+
+\textbf{Open world.} A larger ($128\times128$) continuous space scattered with circular obstacles and no room structure; the ``slow variable'' is an artificial $4\times4$ zone grid imposed only for diagnostic probing, not present in the environment's dynamics. Three variants: obstacles fixed across the dataset (landmark shortcuts possible), reshuffled every episode (pure dead reckoning), and reshuffled with $n$ persistent landmarks retained.
+
+\subsection{Architecture}
+
+The fast level is a convolutional encoder $z_1 = \text{Enc}(o)$ (128-d) with a residual dynamics predictor conditioned on both action and abstract context: $\hat z_{1,t+1} = z_{1,t} + f(z_{1,t}, a_t, z_{2,t})$. The abstract level is either
+
+\begin{itemize}
+\item \textbf{instantaneous}: $z_{2,t} = \text{MLP}(z_{1,t})$ (32-d), or
+\item \textbf{recurrent}: $z_{2,t} = \text{GRU}(z_{1,t}, z_{2,t-1})$ (32-d),
+\end{itemize}
+
+with a jumpy level-2 predictor over $k$-step intervals taking an aggregated action summary as input. Both levels are trained with VICReg \citep{bardes2021vicreg} (invariance + variance + covariance) in latent space; no pixel reconstruction is used anywhere in training.
+
+\subsection{Diagnostics}
+
+\textbf{Random-abstractor control (primary).} We instantiate a second abstractor with identical architecture and dimensionality but untrained (random initialization), encode the same data through it, and fit the same probe. If trained $\approx$ random, training moved the abstraction nowhere a random projection of the fast level could not already reach. This control is the core of our protocol: without it, a high top-level probe score establishes only that the slow variable is \emph{recoverable}, not that it was \emph{learned}.
+
+\textbf{Level-use ablation.} During training we measure the increase in level-1 prediction error when $z_2$ is replaced by another batch element's --- a hierarchical analogue of an action-conditioning ablation. Near-zero indicates the lower level ignores the abstract context.
+
+\textbf{Equal-capacity differential probing.} Because $z_2 = g(z_1)$ for a nonlinear $g$, a \emph{linear} probe on $z_2$ is effectively a \emph{nonlinear} probe on $z_1$, and comparing the two directly is confounded. We therefore additionally probe both levels with matched-capacity nonlinear probes.
+
+\section{Experiments}
+
+\subsection{The $2\times2$ design}
+
+Table~\ref{tab:2x2} reports top-level probe accuracy on the slow variable (room identity, 9 classes), trained abstractor vs.\ random control. The two recurrent-abstractor rows are replicated across 3 seeds (mean $\pm$ std); the two instantaneous-abstractor rows are single runs, reported here as a supporting contrast (both show a near-zero or negative gap, the expected direction for a mechanism with no way to use the missing information).
+
+\begin{table}[h]
+\centering
+\caption{Top-level probe accuracy: trained abstractor vs.\ random control. Recurrent rows: mean $\pm$ std over 3 seeds. Instantaneous rows: single run.}
+\label{tab:2x2}
+\begin{tabular}{llccc}
+\toprule
+Observability & Abstractor & Trained & Random & Gap \\
+\midrule
+Full & Instantaneous & 0.997 & 0.995 & $+0.2$pp \\
+Full & Recurrent & $0.994\pm0.002$ & $0.985\pm0.003$ & $+0.83\pm0.17$pp \\
+Egocentric & Instantaneous & 0.340 & 0.358 & $-1.8$pp \\
+Egocentric & Recurrent & $\mathbf{0.654\pm0.060}$ & $\mathbf{0.455\pm0.067}$ & $\mathbf{+19.91\pm3.36}$pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Only one condition shows a learned abstraction. The three failures have two distinct causes.
+
+\textbf{Nothing to add (full observability).} Room identity is already almost perfectly linearly decodable from $z_1$ (probe accuracy up to 1.000 in the recurrent-abstractor run), so any projection --- trained or random --- preserves it. The near-perfect scores in the top two rows measure \emph{recoverability}, not learning. This is the failure mode the random control was designed to catch, and without it these rows would read as strong successes.
+
+\textbf{No mechanism (egocentric + instantaneous).} With an egocentric crop, room identity is not recoverable from any single frame; it requires integrating a history of door transitions. An instantaneous $z_2 = \text{MLP}(z_1)$ is a deterministic function of the current frame alone and therefore cannot encode more than $z_1$ does. The trained abstractor scores \emph{marginally below} random here, consistent with there being no learnable signal to acquire.
+
+\textbf{Both conditions met (egocentric + recurrent).} Making the abstractor recurrent supplies the missing mechanism, and the $19.91\pm3.36$pp gap over random --- replicated across 3 seeds, with a mean nearly $6\times$ its standard deviation --- indicates a genuinely learned abstraction. This is a substantially more reliable estimate than a single run would give: the seed-to-seed range (15.9pp to 24.1pp) is wide in absolute terms, underscoring why we replicate rather than report one number. The level-use ablation moves in the same direction (0.0088 $\to$ 0.0706, a $\sim$5$\times$ increase over the instantaneous case), indicating the lower level begins to rely on the abstract context once that context carries information the frame does not.
+
+\subsection{Memory ablation with an observability control}
+
+A separate experiment isolates memory in the \emph{dynamics} predictor (rather than the abstractor), training an identical pipeline with a GRU-carrying versus memoryless predictor (Table~\ref{tab:memory}).
+
+\begin{table}[h]
+\centering
+\caption{Probe $R^2$ on global position: memoryless vs.\ recurrent predictor.}
+\label{tab:memory}
+\begin{tabular}{lcc}
+\toprule
+Environment & No memory & With memory \\
+\midrule
+Egocentric & 0.821 & \textbf{0.898} \\
+Full observability (control) & 0.997 & 0.997 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Memory helps precisely where information is missing and nowhere else, ruling out increased capacity as the explanation.
+
+\subsection{Negative result: landmark density in open worlds}
+
+We tested whether the \emph{quantity} of persistent visual anchors quantitatively predicts abstraction quality, using the open-world environment with $n$ persistent landmarks among per-episode-reshuffled obstacles. Single runs at $n=0,3,6$ produced an apparently clean monotonic trend ($0.6\to5.5\to8.5$pp gap). Replicating with three seeds per point falsified it (Table~\ref{tab:landmark}).
+
+\begin{table}[h]
+\centering
+\caption{Random-control gap by landmark count, mean $\pm$ std over 3 seeds.}
+\label{tab:landmark}
+\begin{tabular}{lccccc}
+\toprule
+$n$ landmarks & 0 & 3 & 6 & 10 & 15 \\
+\midrule
+Gap, mean (pp) & 5.77 & 11.97 & 4.03 & 4.68 & 5.41 \\
+Std (pp) & 2.45 & 4.49 & 2.10 & 2.13 & 5.35 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No monotonic relationship survives; between-point differences are comparable to within-point standard deviation. We report this because the single-run version was convincing enough that we had begun writing it up as a positive finding.
+
+What \emph{does} hold qualitatively across every variant tested: pure dead reckoning (zero landmarks, obstacles reshuffled every episode) never produces a large gap, while the building environment's doorways --- frequent, reliable, visually distinct anchors encountered on every room transition --- produce the largest gap observed (23.8pp). We therefore conjecture, without claiming to have established, that anchor \emph{reliability and frequency of encounter} matter more than raw count.
+
+\section{Discussion}
+
+Our results suggest hierarchical abstraction becomes measurably real only when two conditions hold simultaneously: \textbf{a mechanism capable of integrating history}, and \textbf{information genuinely unavailable to the lower level without it}. Neither alone suffices, and each failure mode is invisible to standard metrics --- the full-observability cells post the highest absolute probe scores in the entire study while learning nothing.
+
+This offers an empirical account of an architectural choice usually stated without justification: RSSM-style world models (e.g.\ DreamerV3, \citealp{hafner2023dreamerv3}) pair a recurrent deterministic state with an instantaneous stochastic latent. Our $2\times2$ indicates that on fully-observable benchmarks the recurrent component is approximately inert, and its contribution appears only under partial observability --- which is consistent with, and may partly explain, why hierarchical or recurrent components sometimes appear to contribute little on toy fully-observable tasks.
+
+\subsection{Limitations}
+
+All environments are small synthetic gridworlds with hand-specified slow variables; nothing here has touched real sensor data or learned its own abstraction hierarchy rather than being probed against a predefined one. The open-world ``slow variable'' is an artificial zone grid imposed for probing, not an emergent structure. The landmark-density question remains open rather than answered negatively --- our null result bounds the effect size detectable at our sample size, it does not demonstrate absence. The two recurrent-abstractor rows of Table~\ref{tab:2x2} (our central positive and negative-control results) are replicated across 3 seeds; the two instantaneous-abstractor rows remain single runs, reported as a supporting contrast rather than a primary claim, since both already show a near-zero or negative gap and are less susceptible to the single-run overconfidence our own landmark-density experiment warns against.
+
+\section{Conclusion}
+
+We provide a diagnostic protocol for verifying that hierarchical world-model abstractions are learned rather than decorative, and apply it to show that three of four natural design conditions produce abstractions indistinguishable from random projections. We argue the random-abstractor control is cheap enough --- one extra untrained module and one extra probe --- that it should be standard in any work claiming a hierarchical model has learned a meaningful abstraction.
+
+Code, environments, and all diagnostics are available at \url{[repository URL]}.
+
+\appendix
+\section{Reproduction}
+
+\begin{verbatim}
+# 2x2 design
+python train_hier.py --env full --episodes 200 --ep-len 48 --epochs 40 --k 8
+python train_hier.py --env ego  --episodes 200 --ep-len 48 --epochs 40 --k 8
+
+# memory ablation with observability control
+python compare_memory.py --env egocentric --episodes 150 --ep-len 32 --epochs 20
+python compare_memory.py --env base       --episodes 150 --ep-len 32 --epochs 20
+
+# landmark density sweep (multi-seed)
+python run_landmark_sweep.py --landmarks 0 3 6 10 15 --seeds 0 1 2 \
+    --episodes 200 --ep-len 48 --epochs 40 --k 8
+\end{verbatim}
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{9}
+
+\bibitem[Assran et~al.(2023)]{assran2023ijepa}
+Assran, M., Duval, Q., Misra, I., Bojanowski, P., Vincent, P., Rabbat, M., LeCun, Y., and Ballas, N.
+\newblock Self-supervised learning from images with a joint-embedding predictive architecture.
+\newblock In \emph{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, pp.\ 15619--15629, 2023.
+
+\bibitem[Bardes et~al.(2021)]{bardes2021vicreg}
+Bardes, A., Ponce, J., and LeCun, Y.
+\newblock VICReg: Variance-invariance-covariance regularization for self-supervised learning.
+\newblock \emph{arXiv preprint arXiv:2105.04906}, 2021.
+
+\bibitem[Bardes et~al.(2024)]{bardes2024vjepa}
+Bardes, A., Garrido, Q., Ponce, J., Chen, X., Rabbat, M., LeCun, Y., Assran, M., and Ballas, N.
+\newblock Revisiting feature prediction for learning visual representations from video.
+\newblock \emph{arXiv preprint arXiv:2404.08471}, 2024.
+
+\bibitem[Hafner et~al.(2023)]{hafner2023dreamerv3}
+Hafner, D., Pasukonis, J., Ba, J., and Lillicrap, T.
+\newblock Mastering diverse domains through world models.
+\newblock \emph{arXiv preprint arXiv:2301.04104}, 2023.
+
+\bibitem[LeCun(2022)]{lecun2022path}
+LeCun, Y.
+\newblock A path towards autonomous machine intelligence, version 0.9.2.
+\newblock \emph{OpenReview}, 2022.
+\newblock URL \url{https://openreview.net/pdf?id=BZ5a1r-kVsf}.
+
+\end{thebibliography}
+
+\end{document}
