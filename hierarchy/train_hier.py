@@ -1,23 +1,3 @@
-"""Обучение иерархической JEPA + ДИАГНОСТИКИ схлопывания верхнего уровня.
-
-Три проверки, отвечающие на вопрос "верхний уровень реален или декоративен?":
-
-  1. level_use_gap — аналог action_gap для иерархии. Подменяем z2 на чужой
-     (перемешанный по батчу) и смотрим, насколько вырастет ошибка уровня 1.
-     Около нуля => нижний уровень игнорирует контекст, иерархия декоративна.
-
-  2. Дифференциальный probe — специализация уровней:
-        z1 должен лучше предсказывать ЛОКАЛЬНУЮ позицию внутри комнаты,
-        z2 должен лучше предсказывать НОМЕР КОМНАТЫ (медленная абстракция).
-     Если z2 не лучше z1 на комнате — абстракция не выделилась.
-
-  3. Сравнение с плоским бейзлайном (--flat) при равном числе параметров:
-     выигрыш должен расти С ГОРИЗОНТОМ, иначе дело в ёмкости, а не в иерархии.
-
-Запуск:
-  python train_hier.py --episodes 200 --epochs 20
-  python train_hier.py --episodes 200 --epochs 20 --flat     # бейзлайн
-"""
 import argparse
 import json
 import numpy as np
@@ -64,8 +44,7 @@ def collect(n_episodes, ep_len, seed=0, env_name="full", n_landmarks=6):
 
 def train(obs, acts, epochs, k, device, flat=False, latent1=128, latent2=32,
           bs=16, lr=3e-4, seed=0):
-    torch.manual_seed(seed)   # фиксируем инициализацию весов и порядок батчей —
-                              # иначе шум обучения маскирует эффект от числа ориентиров
+    torch.manual_seed(seed)                         
     n_ep, T1 = obs.shape[0], obs.shape[1]
     T = T1 - 1
     enc = Encoder(latent1).to(device)
@@ -87,7 +66,6 @@ def train(obs, acts, epochs, k, device, flat=False, latent1=128, latent2=32,
             a = acts_t[idx].to(device)
             B = o.shape[0]
             z1 = enc(o.view(B * T1, *o.shape[2:])).view(B, T1, -1)
-            # РЕКУРРЕНТНОЕ накопление z2 вдоль эпизода (не мгновенная проекция!)
             h2 = abst.init_hidden(B, device)
             z2_list = []
             for t in range(T1):
@@ -95,21 +73,19 @@ def train(obs, acts, epochs, k, device, flat=False, latent1=128, latent2=32,
                 z2_list.append(h2)
             z2 = torch.stack(z2_list, dim=1)   # (B, T1, latent2)
 
-            # --- уровень 1: пошаговое предсказание с контекстом сверху ---
             loss1 = 0.0
             gap_num = gap_den = 0.0
             for t in range(T):
                 z1_hat = p1(z1[:, t], a[:, t], z2[:, t])
                 l, _ = vicreg_loss(z1_hat, z1[:, t + 1])
                 loss1 = loss1 + l
-                with torch.no_grad():   # диагностика: подмена контекста
+                with torch.no_grad():   
                     z1_bad = p1(z1[:, t], a[:, t], z2[torch.randperm(B), t])
                     e_bad = F.mse_loss(z1_bad, z1[:, t + 1]).item()
                     e_ok = F.mse_loss(z1_hat, z1[:, t + 1]).item()
                     gap_num += e_bad - e_ok; gap_den += e_bad
             loss1 = loss1 / T
 
-            # --- уровень 2: прыжковое предсказание через k шагов ---
             loss2 = 0.0
             n2 = 0
             for t in range(0, T - k, k):
@@ -152,9 +128,6 @@ def encode_all(enc, abst, obs, device, bs=8):
 
 
 def mlp_probe_r2(X, Y, device, hidden=64, steps=600):
-    """Нелинейный probe равной ёмкости — убирает конфаунд:
-    линейный probe по z2 неявно нелинеен относительно z1 (z2 = MLP(z1)),
-    поэтому сравнивать линейные probe по разным уровням некорректно."""
     import torch.nn as nn
     n_tr = int(0.8 * len(X))
     X, Y = X.to(device), Y.to(device)
@@ -186,7 +159,6 @@ def ridge_r2(X, Y, device):
 
 
 def room_accuracy(X, rooms, device, n_cls=None):
-    """Линейный классификатор комнаты/зоны (ridge на one-hot) -> точность."""
     if n_cls is None:
         n_cls = GRID * GRID
     Y = torch.zeros(len(rooms), n_cls)
@@ -238,10 +210,7 @@ def main():
     enc.eval(); abst.eval(); p1.eval(); p2.eval()
 
     Z1, Z2 = encode_all(enc, abst, obs, device)
-    # КОНТРОЛЬ: тот же абстрактор, но НЕОБУЧЕННЫЙ (случайные веса).
-    # Если случайная проекция даёт тот же прирост — выигрыш даёт нелинейность
-    # архитектуры, а не обучение абстракции.
-    rnd_abst = Abstractor(128, 32).to(device).eval()  # необученный GRU-абстрактор
+    rnd_abst = Abstractor(128, 32).to(device).eval()  
     _, Z2rnd = encode_all(enc, rnd_abst, obs, device)
 
     Z1f = Z1.reshape(-1, Z1.shape[-1]); Z2f = Z2.reshape(-1, Z2.shape[-1])
