@@ -1,22 +1,3 @@
-"""Нужна ли память? Сравнение безпамятного (MLP) и рекуррентного (GRU)
-предикторов на частично наблюдаемой среде.
-
-Обе модели обучаются ОДНИМ кодом на ОДНИХ последовательностях, отличаясь
-только наличием скрытого состояния — значит разница в метриках объясняется
-именно памятью.
-
-Методологические улучшения против stress_test.py:
-  * action_gap НОРМИРОВАН (делится на ошибку при случайном действии),
-    поэтому сравним между средами с разным уровнем шума.
-  * probe считается ДВУМЯ способами: из z (что видно в кадре) и из (z, h)
-    (что модель помнит). Разница между ними — вклад памяти.
-  * ошибка probe разбивается ПО ПОЗИЦИЯМ — карта "где модель понимает,
-    где она находится".
-
-Запуск:
-  python compare_memory.py --env egocentric --episodes 150 --epochs 20
-  python compare_memory.py --env base --episodes 150 --epochs 20
-"""
 import argparse
 import json
 import numpy as np
@@ -30,7 +11,6 @@ from losses import vicreg_loss
 
 
 def collect_sequences(env_cls, n_episodes, ep_len, seed=0):
-    """Возвращает (obs, actions, states) формы (эпизоды, шаги, ...)."""
     env = env_cls(seed=seed)
     rng = np.random.default_rng(seed)
     O, A, S = [], [], []
@@ -48,7 +28,6 @@ def collect_sequences(env_cls, n_episodes, ep_len, seed=0):
 
 
 def train(pred_cls, obs, acts, epochs, latent_dim, device, bs=32, lr=3e-4):
-    """Обучение энкодера + предиктора на последовательностях (BPTT)."""
     n_ep, T1 = obs.shape[0], obs.shape[1]
     T = T1 - 1
     enc = Encoder(latent_dim).to(device)
@@ -85,7 +64,7 @@ def train(pred_cls, obs, acts, epochs, latent_dim, device, bs=32, lr=3e-4):
                 list(enc.parameters()) + list(pred.parameters()), 5.0)
             opt.step()
             tot_loss += loss.item()
-            tot_gap += gap_num / max(gap_den, 1e-8)   # НОРМИРОВАННЫЙ gap
+            tot_gap += gap_num / max(gap_den, 1e-8)   
             n_batches += 1
         if ep % 5 == 0 or ep == epochs:
             print(f"    epoch {ep:3d} | loss {tot_loss/n_batches:.4f} "
@@ -95,7 +74,6 @@ def train(pred_cls, obs, acts, epochs, latent_dim, device, bs=32, lr=3e-4):
 
 @torch.no_grad()
 def probe(enc, pred, obs, acts, states, device, use_memory: bool):
-    """Ridge-probe позиции. use_memory=True -> признаки (z, h), иначе только z."""
     n_ep, T1 = obs.shape[0], obs.shape[1]
     T = T1 - 1
     feats, targets = [], []
