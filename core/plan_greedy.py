@@ -1,17 +1,3 @@
-"""Жадный планировщик с коротким горизонтом (обход ловушки L2).
-
-Проблема, которую решаем: при длинном горизонте и L2-расстоянии в латенте
-"стоять на месте" часто выгоднее правильного движения, потому что промежуточные
-состояния кодируются далеко от цели (кривизна латентного многообразия).
-
-Решение здесь простое и прагматичное: оптимизируем расстояние через 1-2 шага,
-а не через 15, и перепланируем на каждом шаге (жадный MPC). Короткий горизонт
-не даёт кривизне накопиться. Это НЕ полное решение (см. train_distance.py для
-правильной temporal-distance метрики), но обычно этого хватает, чтобы агент
-поехал — и чтобы отделить "планировщик сломан" от "L2 плохая метрика".
-
-Запуск:  python plan_greedy.py --ckpt checkpoints/jepa_step8.pt --start 14 20 --goal 45 20
-"""
 import argparse
 import numpy as np
 import torch
@@ -23,7 +9,6 @@ from models import Encoder, Predictor
 @torch.no_grad()
 def greedy_action(pred, z, z_goal, horizon=2, pop=512, iters=4,
                   n_elites=64, device="cpu"):
-    """CEM на коротком горизонте. Возвращает первое действие лучшего плана."""
     mean = torch.zeros(horizon, 2, device=device)
     std = torch.full((horizon, 2), 0.8, device=device)
     for _ in range(iters):
@@ -31,7 +16,7 @@ def greedy_action(pred, z, z_goal, horizon=2, pop=512, iters=4,
         zc = z.expand(pop, -1)
         for t in range(horizon):
             zc = pred(zc, acts[:, t])
-        cost = ((zc - z_goal) ** 2).mean(-1)                 # расстояние в конце
+        cost = ((zc - z_goal) ** 2).mean(-1)                 
         elite = acts[cost.topk(n_elites, largest=False).indices]
         mean, std = elite.mean(0), elite.std(0) + 1e-3
     return mean[0]
