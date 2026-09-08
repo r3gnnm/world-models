@@ -1,15 +1,3 @@
-"""Сбор последовательностей с Quad2DEnv для обучения с multi-step loss.
-
-Отличие от collect_openworld.py: сохраняем данные как ПОСЛЕДОВАТЕЛЬНОСТИ
-(эпизоды), а не как отдельные переходы — multi-step loss требует
-последовательных кадров. Формат: (n_episodes, ep_len+1, 1, 64, 64).
-
-Политика — каскадный PD (см. env_quad2d.hover_policy) со случайными целями
-висения и шумом. Чисто случайная политика на недоуправляемой системе
-вырождается в столкновения и не даёт полезного датасета.
-
-Запуск:  python collect_quad2d.py --episodes 300 --ep-len 64
-"""
 import argparse
 import os
 import numpy as np
@@ -19,27 +7,11 @@ from env_quad2d import Quad2DEnv, hover_policy, SIZE
 def collect(n_episodes, ep_len, seed=0, noise=0.15, retarget_every=24,
            maneuver_every=15, maneuver_len=4, maneuver_scale=0.85,
            egocentric=True, fixed_map=False, dual_view=False):
-    """maneuver_*: периодически впрыскиваем несколько шагов почти предельных
-    команд поверх PD-коррекции. Без этого политика сбора данных (сошедшийся
-    PD-контроллер) выдаёт почти всегда маленькие корректирующие действия —
-    action_gap ablation (перемешивание действий внутри батча) не видит
-    контраста между "правильным" и "случайным" действием, если оба похожи.
-    Манёвры дают датасету диапазон, сравнимый с инерционным случайным
-    блужданием в комнатных средах, где gap хорошо считывался."""
     rng = np.random.default_rng(seed)
     O, A, S = [], [], []
     for ep in range(n_episodes):
-        # fixed_map: одна и та же карта во всех эпизодах. Нужно для
-        # глобального вида: при разных картах дисперсия между эпизодами
-        # в ~5 раз больше дисперсии движения дрона, и модель кодирует
-        # статичный фон вместо агента (измерено — shortcut learning:
-        # loss падает, action_gap ноль, probe отрицательный).
         if fixed_map:
             env = Quad2DEnv(seed=seed, egocentric=egocentric, dual_view=dual_view)
-            # ВАЖНО: seed фиксирует и карту, И стартовые позиции. Карту
-            # оставляем, а rng переуседиваем — иначе все эпизоды стартуют
-            # из одной точки и покрытие мира схлопывается (измерено:
-            # x охватывал лишь 70..98 из 128 вместо 3..125).
             env.rng = np.random.default_rng(seed * 1000 + ep)
             env.reset()
         else:
