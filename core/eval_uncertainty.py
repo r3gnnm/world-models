@@ -1,18 +1,3 @@
-"""Калибровка неопределённости ансамбля.
-
-Вопрос: совпадает ли РАЗБРОС ансамбля (то, где модель "сомневается")
-с РЕАЛЬНОЙ ошибкой (то, где она действительно ошибается)?
-
-Три анализа:
-  1. Одношаговая калибровка: корреляция (Пирсон + Спирмен) между
-     disagreement и фактической ошибкой на тестовых переходах.
-  2. Пространственная карта: средний disagreement по позициям агента.
-     Гипотеза: неуверенность концентрируется у проёма в перегородке.
-  3. Multi-step: рост disagreement и ошибки с горизонтом воображения.
-
-Запуск:  python eval_uncertainty.py --ensemble checkpoints/ensemble.pt
-Выход:   calibration_scatter.png, uncertainty_map.png, rollout_uncertainty.png
-"""
 import argparse
 import numpy as np
 import torch
