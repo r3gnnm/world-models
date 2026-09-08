@@ -1,19 +1,3 @@
-"""Замкнутый цикл автономной разведки: собирает воедино всё, что уже
-провалидировано по отдельности.
-
-Каждый раунд:
-  1. Сэмплируем K кандидатных точек, не пересекающих препятствия и не
-     дублирующих уже исследованное (минимальная дистанция до visited).
-  2. Оцениваем неопределённость каждой через ансамбль (rollout в воображении).
-  3. QUBO выбирает M точек, избегая избыточных пар (уже провалидировано:
-     0 избыточных пар на 10/10 seed, -2.6% цены разведки).
-  4. Дрон летит к каждой выбранной точке по очереди (ближайшая сначала),
-     навигация — короткогоризонтный CEM в латентном пространстве (та же
-     идея, что в plan_greedy.py, самодостаточная реализация здесь).
-  5. Точки помечаются как исследованные, раунд повторяется с учётом этого.
-
-Запуск:  python closed_loop_exploration.py --rounds 5 --waypoints-per-round 3
-"""
 import argparse
 import numpy as np
 import torch
@@ -27,10 +11,6 @@ from train_distance import DistanceNet
 @torch.no_grad()
 def greedy_nav_step(pred, dist_net, z, z_goal, device, horizon=10, pop=384,
                     iters=6, n_elites=48):
-    """Короткогоризонтный CEM на ОБУЧЕННОЙ temporal-distance метрике вместо
-    сырого L2 (см. диагностику: L2 даёт слабый/обманчивый градиент при
-    наличии препятствий между дроном и целью — та же ловушка, что и в
-    первой версии планировщика для room-среды)."""
     mean = torch.zeros(horizon, 2, device=device)
     std = torch.full((horizon, 2), 0.8, device=device)
     zg = z_goal.expand(pop, -1)
@@ -48,18 +28,10 @@ def greedy_nav_step(pred, dist_net, z, z_goal, device, horizon=10, pop=384,
 
 
 def make_subgoals(env, start, target, max_leg=25.0):
-    """Разбивает дальний перелёт на цепочку промежуточных точек не дальше
-    max_leg друг от друга — короткий горизонт CEM не может 'разглядеть'
-    обход крупных препятствий на дистанции 80-100 юнитов (см. диагностику:
-    неудачи дают ОГРОМНЫЙ остаток, а не 'почти долетел' — типичный
-    признак застревания сразу за первым препятствием на пути). Цепочка
-    коротких отрезков — стандартный приём (глобальный грубый маршрут +
-    локальный исполнитель), прямая практическая параллель с иерархией."""
     start, target = np.asarray(start), np.asarray(target)
     dist = np.linalg.norm(target - start)
     n = max(1, int(np.ceil(dist / max_leg)))
     pts = [start + (target - start) * (i / n) for i in range(1, n + 1)]
-    # если промежуточная точка попала в препятствие — небольшой перпендикулярный сдвиг
     fixed = []
     perp = np.array([-(target - start)[1], (target - start)[0]])
     perp = perp / (np.linalg.norm(perp) + 1e-8)
@@ -76,8 +48,6 @@ def make_subgoals(env, start, target, max_leg=25.0):
 
 def navigate_chained(enc, pred, dist_net, env, target_xy, device,
                      max_leg=25.0, per_leg_steps=40):
-    """Ведёт агента к дальней цели через цепочку промежуточных точек —
-    каждый отрезок решается отдельным, компактным navigate_to."""
     subgoals = make_subgoals(env, env.pos, target_xy, max_leg)
     full_traj = [env.pos.copy()]
     reached_final = False
@@ -95,9 +65,6 @@ def navigate_chained(enc, pred, dist_net, env, target_xy, device,
 @torch.no_grad()
 def navigate_to(enc, pred, dist_net, env, target_xy, device, max_steps=60,
                 success_dist=6.0):
-    """Направляет агента к точке через реальную среду (MPC: перепланирование
-    на каждом шаге), используя обученную метрику расстояния как cost.
-    Возвращает (траектория, добрался_ли_за_отведённые_шаги)."""
     goal_env = OpenWorldEnv(seed=0)
     goal_env.obs_pos, goal_env.obs_r = env.obs_pos, env.obs_r  # тот же мир
     goal_env.pos = np.array(target_xy, dtype=np.float32)
@@ -118,12 +85,6 @@ def navigate_to(enc, pred, dist_net, env, target_xy, device, max_steps=60,
 
 def sample_candidates(env, visited, n_candidates, min_dist_visited, rng,
                       max_travel_dist=55.0):
-    """max_travel_dist: не рассматриваем точки дальше разумного вылета за
-    раз — реалистичное ограничение дальности для дрона, и оно же убирает
-    сверхдальние перелёты сквозь плотные кластеры препятствий, которые
-    короткогоризонтная навигация не может надёжно преодолеть за один присест
-    (см. диагностику: застревание именно на перелётах 60-100+ юнитов через
-    плотные скопления препятствий, а не на разумных дистанциях)."""
     cand = []
     attempts = 0
     while len(cand) < n_candidates and attempts < n_candidates * 40:
