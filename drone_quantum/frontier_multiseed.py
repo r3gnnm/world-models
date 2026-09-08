@@ -1,11 +1,3 @@
-"""Многократный прогон frontier_qubo с разными seed кандидатных точек —
-чтобы не повторить ошибку с landmark-sweep (вывод по одному прогону).
-
-Усредняет: (1) разрыв по суммарной неопределённости QUBO vs жадный,
-(2) число избыточных пар (расстояние < redundancy_radius) в каждом наборе.
-
-Запуск:  python frontier_multiseed.py --seeds 0 1 2 3 4
-"""
 import argparse
 import numpy as np
 import torch
