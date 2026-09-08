@@ -1,23 +1,3 @@
-"""Temporal-distance метрика для квадрокоптера — то же лечение, что уже
-дважды применялось в проекте (комнаты, открытый мир).
-
-Диагноз (измерено, не предположено): корреляция сырого L2-расстояния в
-латенте с реальной пространственной дистанцией составляет 0.537. В
-комнатных средах даже 0.67 не позволяло CEM планировать (агент застревал);
-обученная temporal-distance метрика поднимала это до 0.86, и планирование
-начинало работать. Здесь исходная ситуация ещё хуже, что полностью
-объясняет 0/10 успешных долётов модельного планировщика против 10/10 на
-истинной физике.
-
-Обучающий сигнал — тот же self-supervised приём: пары состояний из одной
-траектории, разделённые k шагами, должны иметь расстояние ~k; пары из
-разных эпизодов получают hinge-штраф (не жёсткую цель — многие такие пары
-случайно близки, и жёсткая цель дестабилизирует обучение, это выяснилось
-ещё в первой реализации для комнат).
-
-Запуск:  python train_quad_distance.py --ckpt checkpoints/quad2d_150ep.pt \
-             --data data/quad2d.npz --steps 5000
-"""
 import argparse
 import os
 import numpy as np
@@ -30,7 +10,6 @@ from env_quad2d import Quad2DEnv, SIZE, GROUND_Z, CEILING_Z
 
 
 class QuadDistanceNet(nn.Module):
-    """Симметричная обучаемая метрика d(z_a, z_b) >= 0."""
     def __init__(self, latent_dim=128, hidden=256):
         super().__init__()
         self.net = nn.Sequential(
@@ -46,7 +25,6 @@ class QuadDistanceNet(nn.Module):
 
 @torch.no_grad()
 def encode_episodes(enc, obs, device, bs=8):
-    """obs: (n_ep, T, 1, 64, 64) -> (n_ep, T, latent)"""
     n_ep, T = obs.shape[0], obs.shape[1]
     Z = []
     for i in range(0, n_ep, bs):
@@ -72,9 +50,6 @@ def sample_batch(z_ep, max_k, device, bs=256):
 
 @torch.no_grad()
 def diagnose(enc, dist_net, device, n_goals=4, n_probe=120, seed=0):
-    """Сравнивает корреляцию сырого L2 и обученной метрики с реальной
-    пространственной дистанцией — тот же диагностический протокол, что
-    применялся для комнатных сред."""
     rng = np.random.default_rng(seed)
     l2_all, learned_all, real_all = [], [], []
     for g in range(n_goals):
