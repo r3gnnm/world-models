@@ -1,9 +1,3 @@
-"""Сбор переходов с OpenWorldEnv — формат совместим с train.py/train_ensemble.py
-(тот же .npz со полями obs/actions/next_obs/states), так что весь существующий
-пайплайн обучения JEPA переиспользуется без изменений.
-
-Запуск:  python collect_openworld.py --transitions 20000 --out data/openworld.npz
-"""
 import argparse
 import os
 import numpy as np
