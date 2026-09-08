@@ -1,14 +1,3 @@
-"""Визуализация "снов" модели: воображаемый rollout против реальности.
-
-Кодируем стартовый кадр, дальше катим ТОЛЬКО предиктор по действиям
-(модель воображает, не видя настоящих кадров) и декодируем каждый латент.
-Рядом — реальные кадры из среды при тех же действиях. Видно, как воображение
-расходится с реальностью по мере накопления ошибки.
-
-Запуск:  python visualize_dreams.py --ckpt checkpoints/jepa.pt \
-                 --decoder checkpoints/decoder.pt --steps 20
-Выход:   dreams.png (сетка кадров) + dreams.gif (анимация)
-"""
 import argparse
 import numpy as np
 import torch
@@ -20,13 +9,12 @@ from train_decoder import Decoder
 
 @torch.no_grad()
 def rollout_dream(enc, pred, dec, env, actions, device):
-    """Возвращает (воображаемые кадры, реальные кадры) по списку действий."""
     o = env.render()
     z = enc(torch.from_numpy(o[None]).to(device))
     imagined, real = [dec(z).cpu().numpy()[0, 0]], [o[0]]
     for a in actions:
-        z = pred(z, torch.from_numpy(a[None]).to(device))     # воображение
-        o = env.step(a)                                        # реальность
+        z = pred(z, torch.from_numpy(a[None]).to(device))     
+        o = env.step(a)                                        
         imagined.append(dec(z).cpu().numpy()[0, 0])
         real.append(o[0])
     return np.array(imagined), np.array(real)
