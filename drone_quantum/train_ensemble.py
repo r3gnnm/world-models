@@ -1,18 +1,3 @@
-"""Ансамбль предикторов для оценки неопределённости динамики.
-
-Рецепт:
-  1. Берём обученный чекпоинт, ЗАМОРАЖИВАЕМ энкодер.
-  2. Предвычисляем латенты z_t, z_{t+1} для всего датасета (один проход).
-  3. Обучаем K предикторов с разными сидами на бутстрап-подвыборках.
-     Коллапс невозможен по построению: цели (латенты) фиксированы,
-     поэтому достаточно обычного MSE, VICReg не нужен.
-
-Разброс предсказаний членов ансамбля = эпистемическая неопределённость
-модели динамики: "мы по-разному выучились там, где данных мало или
-динамика сложна".
-
-Запуск:  python train_ensemble.py --ckpt checkpoints/jepa.pt --k 5
-"""
 import argparse
 import os
 import numpy as np
@@ -34,7 +19,7 @@ def precompute_latents(enc, obs, next_obs, device, bs=512):
 def train_one_predictor(z, a, z1, latent_dim, seed, epochs, device, bs=512):
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    boot = rng.integers(0, len(z), size=len(z))          # бутстрап-подвыборка
+    boot = rng.integers(0, len(z), size=len(z))          
     zb, ab, z1b = z[boot].to(device), a[boot].to(device), z1[boot].to(device)
 
     pred = Predictor(latent_dim).to(device)
