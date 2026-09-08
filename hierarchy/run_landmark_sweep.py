@@ -1,20 +1,3 @@
-"""Развёртка "разрыв обученный/случайный абстрактор" по числу ориентиров,
-с усреднением по нескольким seed — чтобы отделить реальный тренд от шума
-обучения (см. обсуждение: одиночные прогоны на 0/3/6 ориентиров дали
-неоднозначную картину при добавлении промежуточных точек).
-
-Всё в ОДНОМ процессе: без накладных расходов на перезапуск Python
-15+ раз, результаты собираются и усредняются автоматически, строится
-график с доверительным интервалом.
-
-Запуск:
-  python run_landmark_sweep.py --landmarks 0 3 6 10 15 --seeds 0 1 2 \
-      --episodes 200 --ep-len 48 --epochs 40 --k 8
-
-Быстрая проверка перед полным прогоном (несколько минут):
-  python run_landmark_sweep.py --landmarks 0 6 15 --seeds 0 1 \
-      --episodes 40 --ep-len 20 --epochs 8 --k 4 --quick-check
-"""
 import argparse
 import json
 import time
@@ -91,7 +74,6 @@ def main():
                   f"(прошло {elapsed/60:.1f} мин, осталось ~{eta/60:.1f} мин)",
                   flush=True)
 
-    # --- агрегация: среднее и std по seed для каждого n_landmarks ---
     summary = []
     for n in args.landmarks:
         gaps = [r["gap_pp"] for r in all_runs if r["n_landmarks"] == n]
@@ -114,7 +96,6 @@ def main():
         json.dump({"runs": all_runs, "summary": summary}, f, indent=2)
     print(f"\nСохранено: {args.out}")
 
-    # --- график с доверительным интервалом ---
     try:
         import matplotlib
         matplotlib.use("Agg")
