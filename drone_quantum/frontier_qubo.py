@@ -1,30 +1,3 @@
-"""Frontier selection как QUBO: какие точки разведки выбрать дроном.
-
-Задача: из K кандидатных точек вокруг агента выбрать M самых ценных для
-разведки. "Ценность" точки — предсказанная неопределённость модели на пути
-к ней (чем больше расходятся члены ансамбля, тем меньше модель знает про
-это направление, тем ценнее там реально пролететь). Наивный жадный выбор
-(взять top-M по ценности) не учитывает ИЗБЫТОЧНОСТЬ: если две ценные точки
-рядом, разведка одной почти наверняка даёт всю ту же информацию, что и
-разведка соседней — жадный алгоритм всё равно выберет обе, а QUBO способен
-учесть это взаимодействие между кандидатами и предпочесть более
-рассредоточенный набор.
-
-QUBO-формулировка (бинарные переменные x_i = "выбрать точку i"):
-
-  H(x) = -sum_i u_i * x_i                         # максимизируем ценность
-         + P * (sum_i x_i - M)^2                  # ровно M точек (мягкое ограничение)
-         + R * sum_{i<j, near(i,j)} x_i * x_j      # штраф за близкие пары (избыточность)
-
-Решаем классическим симулированным отжигом (dwave-neal) — тем же
-интерфейсом (dimod.BinaryQuadraticModel), которым решают и на настоящем
-квантовом отжигающем устройстве (D-Wave). Смена SimulatedAnnealingSampler
-на DWaveSampler — единственное, что меняется при переходе на реальное
-железо через корейских партнёров.
-
-Запуск:  python frontier_qubo.py --ckpt checkpoints/openworld_jepa.pt \
-                 --ensemble checkpoints/openworld_ensemble.pt
-"""
 import argparse
 import numpy as np
 import torch
@@ -38,19 +11,6 @@ from models import Encoder, Predictor
 @torch.no_grad()
 def candidate_uncertainty(enc, members, env, cand_points, device, horizon_cap=8,
                           return_path_risk=False):
-    """Для каждой кандидатной точки: катим ансамбль предикторов по прямой
-    от текущей позиции агента и меряем разброс предсказаний в конце —
-    та же методология, что в eval_uncertainty.rollout_analysis (r≈0.98
-    корреляция с реальной ошибкой на building-среде).
-
-    Если return_path_risk=True — дополнительно возвращает risk: средний
-    разброс ансамбля НА ВСЁМ ПУТИ (не только в конце). Это отдельное от
-    "ценности" понятие: value = сколько нового мы узнаем, долетев туда;
-    risk = насколько модель вообще уверена, что она правильно предсказывает
-    происходящее по дороге. Дальняя точка может быть очень информативной
-    (высокий value) и при этом опасной, если путь к ней лежит через зону,
-    где модели сильно расходятся (высокий risk) — это разные критерии, и
-    полноценный QUBO должен учитывать оба, а не только value."""
     o = env.render()
     z0 = enc(torch.from_numpy(o[None]).to(device))
     values, risks = [], []
@@ -65,8 +25,8 @@ def candidate_uncertainty(enc, members, env, cand_points, device, horizon_cap=8,
         for _ in range(max(steps, 1)):
             zs = [m(zk, a_t) for m, zk in zip(members, zs)]
             step_disagreements.append(torch.stack(zs).std(0).mean().item())
-        values.append(step_disagreements[-1])              # неопределённость В ЦЕЛИ
-        risks.append(float(np.mean(step_disagreements)))    # средний риск ПО ПУТИ
+        values.append(step_disagreements[-1])              
+        risks.append(float(np.mean(step_disagreements)))    
     if return_path_risk:
         return np.array(values), np.array(risks)
     return np.array(values)
@@ -76,24 +36,6 @@ def build_qubo(cand_points, value, M, current_pos=None, risk=None,
                max_travel_dist=55.0, penalty_budget=5.0,
                penalty_redundancy=3.0, redundancy_radius=20.0,
                w_energy=1.0, w_risk=1.0, w_transit=2.0):
-    """Полная формулировка с ценой перелёта, риском и компактностью маршрута.
-
-    Cost(x) = -value_i * x_i                                  # инф. ценность (максимизируем)
-              + w_energy * energy_i * x_i                     # цена перелёта (дистанция от дрона)
-              + w_risk   * risk_i   * x_i                      # риск (неуверенность ПО ПУТИ)
-              + P * (sum x_i - M)^2                            # бюджет: ровно M точек
-              + R * sum_{i<j, близко} x_i*x_j                  # штраф за избыточность (дублирование)
-              + T * sum_{i<j} (dist_ij/max_travel_dist) x_i*x_j  # штраф за разбросанность маршрута
-
-    Последнее слагаемое — новое: оно решает и задачу "учесть цену
-    перелёта между точками", и попутно устраняет баг с порядком облёта
-    (раньше QUBO мог выбрать 3 точки, каждая по отдельности ≤max_travel_dist
-    от СТАРТА раунда, но далеко друг от друга — тогда третья точка
-    маршрута оказывалась вне досягаемости от текущей позиции дрона к
-    моменту, когда до неё доходила очередь). Штраф за суммарную
-    межточечную дистанцию заставляет QUBO предпочитать компактный,
-    физически облетаемый за один заход набор точек.
-    """
     n = len(cand_points)
     value_norm = (value - value.min()) / (np.ptp(value) + 1e-8)
 
@@ -113,14 +55,11 @@ def build_qubo(cand_points, value, M, current_pos=None, risk=None,
         Q[(i, i)] = (Q.get((i, i), 0.0) - value_norm[i]
                     + w_energy * energy_norm[i] + w_risk * risk_norm[i])
 
-    # бюджетное ограничение (sum x_i - M)^2
     for i in range(n):
         Q[(i, i)] = Q.get((i, i), 0.0) + penalty_budget * (1 - 2 * M)
     for i in range(n):
         for j in range(i + 1, n):
             Q[(i, j)] = Q.get((i, j), 0.0) + 2 * penalty_budget
-
-    # штраф за избыточность близких пар + штраф за разбросанность маршрута
     for i in range(n):
         for j in range(i + 1, n):
             d = np.linalg.norm(cand_points[i] - cand_points[j])
@@ -215,7 +154,6 @@ if __name__ == "__main__":
           f"суммарная ценность = {value[greedy_mask].sum():.3f}")
     print(f"QUBO выбор ({qubo_mask.sum()} точек): "
           f"суммарная ценность = {value[qubo_mask].sum():.3f}")
-    # средняя попарная дистанция внутри выбранного набора — мера "разброса"
     for name, mask in [("Жадный", greedy_mask), ("QUBO", qubo_mask)]:
         pts = cand_points[mask]
         if len(pts) > 1:
@@ -227,9 +165,6 @@ if __name__ == "__main__":
                   f"мин. дистанция = {min(dists):.1f}, "
                   f"макс. дистанция = {max_pair:.1f}, "
                   f"избыточных пар (< 20) = {n_close}/{len(dists)}")
-            # прямая проверка бага из closed_loop_exploration: если весь набор
-            # компактен (макс. попарная дистанция мала), последняя точка
-            # маршрута не окажется неожиданно далеко после облёта первых
             if max_pair > args.m_travel_dist:
                 print(f"    ВНИМАНИЕ: макс. дистанция {max_pair:.1f} превышает "
                       f"m_travel_dist={args.m_travel_dist} — маршрут не компактен")
