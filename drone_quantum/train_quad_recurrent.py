@@ -1,19 +1,3 @@
-"""Обучение GRU поверх замороженного encoder — чтобы h накопил историю,
-нужную для восстановления скоростей (vx, vz, omega).
-
-Задача для GRU: предсказывать z1_{t+1} используя (z1_t, h_t, a_t), а не
-только (z1_t, a_t) как раньше. Если h действительно накопил что-то полезное
-(историю движения, из которой выводится скорость), предиктор с контекстом
-должен предсказывать лучше — и, что важнее для нас, из самого h должна
-линейно восстанавливаться скорость, которую z1 сам по себе не содержит.
-
-Энкодер ЗАМОРОЖЕН (уже обучен на x/z/theta) — тренируется только GRU и
-небольшой предиктор поверх него, аналогично тому, как в hierarchy/
-Abstractor обучался поверх замороженного z1.
-
-Запуск:  python train_quad_recurrent.py --ckpt checkpoints/quad2d_150ep.pt \
-                 --data data/quad2d.npz --epochs 40
-"""
 import argparse
 import numpy as np
 import torch
@@ -28,8 +12,6 @@ STATE_NAMES = ["x", "z", "vx", "vz", "theta", "omega"]
 
 
 class ContextPredictor(nn.Module):
-    """(z1_t, h_t, a_t) -> z1_{t+1}. Расширенная версия Predictor с
-    дополнительным входом h — контекстом из GRU."""
     def __init__(self, latent_dim=128, hidden_dim=64, action_dim=2, hidden=256):
         super().__init__()
         self.net = nn.Sequential(
@@ -46,7 +28,7 @@ def train_recurrent(base_enc, obs, acts, epochs, device, hidden_dim=64,
                     latent_dim=128, action_dim=2, bs=16, lr=3e-4, seed=0):
     torch.manual_seed(seed)
     for p in base_enc.parameters():
-        p.requires_grad_(False)   # encoder заморожен
+        p.requires_grad_(False)   
 
     rec_enc = RecurrentQuadEncoder(base_enc, latent_dim, hidden_dim).to(device)
     pred = ContextPredictor(latent_dim, hidden_dim, action_dim).to(device)
@@ -121,15 +103,12 @@ if __name__ == "__main__":
     print("реальный, а не просто 'больше признаков' эффект)\n")
 
     r2_z1, r2_z1h = None, None
-    # ВАЖНО: для случайного контроля нужен ОТДЕЛЬНЫЙ необученный GRU,
-    # а не обученный rec_enc — иначе колонки "обучен"/"случаен" совпадут
     rnd_rec_enc = RecurrentQuadEncoder(base_enc, ck["latent_dim"],
                                        args.hidden_dim).to(device).eval()
     r2_z1, r2_rndgru, r2_rndinst = probe_three_way(
         base_enc, rnd_rec_enc, d["obs"], d["states"], device,
         latent_dim=ck["latent_dim"])
 
-    # обученный GRU считаем тем же способом, что и раньше, для четвёртой колонки
     @torch.no_grad()
     def ridge_r2_single(rec_enc_local, obs, states, device, bs=8):
         n_ep, T = obs.shape[0], obs.shape[1]
