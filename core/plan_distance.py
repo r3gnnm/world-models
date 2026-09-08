@@ -1,15 +1,3 @@
-"""Планировщик на обученной temporal-distance метрике (правильное решение).
-
-Отличие от plan_greedy.py: cost = dist_net(z, z_goal) вместо ((z-z_goal)**2).
-Обученная метрика соответствует ЧИСЛУ ШАГОВ между состояниями, а не евклидову
-расстоянию в искривлённом латенте — поэтому у неё нет ложных локальных минимумов,
-в которых застревает L2-планировщик.
-
-Предпосылка: обучены и модель (train.py), и метрика (train_distance.py).
-
-Запуск:  python plan_distance.py --ckpt checkpoints/jepa.pt \
-                 --dist checkpoints/distance.pt --start 14 20 --goal 24 45
-"""
 import argparse
 import numpy as np
 import torch
@@ -22,7 +10,6 @@ from train_distance import DistanceNet
 @torch.no_grad()
 def plan_action(pred, dist_net, z, z_goal, horizon=5, pop=512, iters=5,
                 n_elites=64, device="cpu"):
-    """CEM с обученной метрикой в качестве cost. Возвращает первое действие."""
     mean = torch.zeros(horizon, 2, device=device)
     std = torch.full((horizon, 2), 0.8, device=device)
     zg = z_goal.expand(pop, -1)
@@ -32,8 +19,8 @@ def plan_action(pred, dist_net, z, z_goal, horizon=5, pop=512, iters=5,
         cost = torch.zeros(pop, device=device)
         for t in range(horizon):
             zc = pred(zc, acts[:, t])
-            cost = cost + 0.2 * dist_net(zc, zg)      # шейпинг по обученной метрике
-        cost = cost + dist_net(zc, zg)                # финальное расстояние
+            cost = cost + 0.2 * dist_net(zc, zg)      
+        cost = cost + dist_net(zc, zg)                
         elite = acts[cost.topk(n_elites, largest=False).indices]
         mean, std = elite.mean(0), elite.std(0) + 1e-3
     return mean[0]
