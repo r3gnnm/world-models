@@ -1,13 +1,3 @@
-"""Планирование в латентном пространстве: CEM + MPC.
-
-Идея: цель задаётся КАРТИНКОЙ. Кодируем её в z_goal, затем Cross-Entropy Method
-подбирает последовательность действий, минимизирующую латентное расстояние
-до цели, прокатывая кандидатов через предиктор ("воображение"). Исполняем
-первое действие в реальной среде, перепланируем — классический MPC.
-
-Запуск:  python plan_cem.py --ckpt checkpoints/jepa.pt
-Результат: печать прогресса + mpc_trajectory.png с маршрутом агента.
-"""
 import argparse
 import numpy as np
 import torch
@@ -19,7 +9,6 @@ from models import Encoder, Predictor
 @torch.no_grad()
 def cem_plan(pred, z0, z_goal, horizon=15, pop=256, n_elites=32, iters=5,
              device="cpu"):
-    """Возвращает лучшую последовательность действий (horizon, 2)."""
     mean = torch.zeros(horizon, 2, device=device)
     std = torch.full((horizon, 2), 0.7, device=device)
     for _ in range(iters):
@@ -29,8 +18,8 @@ def cem_plan(pred, z0, z_goal, horizon=15, pop=256, n_elites=32, iters=5,
         cost = torch.zeros(pop, device=device)
         for t in range(horizon):
             z = pred(z, acts[:, t])
-            cost += 0.05 * ((z - z_goal) ** 2).mean(-1)   # промежут. шейпинг
-        cost += ((z - z_goal) ** 2).mean(-1)              # финальное расстояние
+            cost += 0.05 * ((z - z_goal) ** 2).mean(-1)   
+        cost += ((z - z_goal) ** 2).mean(-1)              
         elite = acts[cost.topk(n_elites, largest=False).indices]
         mean, std = elite.mean(0), elite.std(0) + 1e-3
     return mean
@@ -50,7 +39,7 @@ def run_mpc(enc, pred, start, goal, device, max_steps=60, success_dist=4.0):
     for step in range(max_steps):
         z = enc(torch.from_numpy(env.render()[None]).to(device))
         plan = cem_plan(pred, z, z_goal, device=device)
-        env.step(plan[0].cpu().numpy())                   # MPC: только 1-е действие
+        env.step(plan[0].cpu().numpy())                   
         traj.append(env.pos.copy())
         dist = float(np.linalg.norm(env.pos - goal))
         if step % 10 == 0 or dist < success_dist:
