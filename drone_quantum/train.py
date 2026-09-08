@@ -1,15 +1,3 @@
-"""Обучение action-conditioned JEPA.
-
-Запуск:  python train.py --data data/transitions.npz --epochs 20
-
-Что логируется и зачем:
-  sim / var / cov  — компоненты VICReg; если var растёт к нулю, а sim падает
-                     к нулю подозрительно быстро — начался коллапс.
-  z_std            — средний std латентов по батчу; здоровое значение ~1.
-  action_gap       — насколько хуже предсказание со случайно перемешанными
-                     действиями. Если gap ~ 0, модель игнорирует действие
-                     и выучила только пассивную динамику. Должен расти.
-"""
 import argparse
 import numpy as np
 import torch
@@ -69,7 +57,6 @@ def main():
             opt.step()
 
             with torch.no_grad():
-                # ablation: предсказание с перемешанными действиями
                 z1_rand = pred(z, a[torch.randperm(len(a))])
                 gap = (torch.nn.functional.mse_loss(z1_rand, z1)
                        - torch.nn.functional.mse_loss(z1_hat, z1)).item()
