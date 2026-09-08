@@ -1,15 +1,10 @@
-"""Среда "две комнаты": агент-точка движется в боксе 64x64 с перегородкой.
-
-Никаких зависимостей кроме numpy. Наблюдение — картинка (1, 64, 64) float32 в [0, 1],
-действие — вектор (dx, dy) в [-1, 1]. Истинное состояние (x, y) доступно для probe.
-"""
 import numpy as np
 
-SIZE = 64          # размер кадра в пикселях
-WALL_X = 32        # x-координата перегородки
-GAP = (26, 38)     # проём в перегородке (y от и до)
-AGENT_R = 3        # радиус агента
-STEP = 8.0         # максимальный сдвиг за шаг, пикселей
+SIZE = 64          
+WALL_X = 32        
+GAP = (26, 38)     
+AGENT_R = 3        
+STEP = 8.0         
 
 
 class TwoRoomsEnv:
@@ -20,9 +15,9 @@ class TwoRoomsEnv:
 
     def _build_walls(self):
         w = np.zeros((SIZE, SIZE), dtype=bool)
-        w[0:2, :] = w[-2:, :] = w[:, 0:2] = w[:, -2:] = True   # рамка
-        w[:, WALL_X - 1:WALL_X + 1] = True                     # перегородка
-        w[GAP[0]:GAP[1], WALL_X - 1:WALL_X + 1] = False        # проём
+        w[0:2, :] = w[-2:, :] = w[:, 0:2] = w[:, -2:] = True   
+        w[:, WALL_X - 1:WALL_X + 1] = True                     
+        w[GAP[0]:GAP[1], WALL_X - 1:WALL_X + 1] = False        
         self.walls = w
 
     def _collides(self, pos) -> bool:
@@ -41,9 +36,7 @@ class TwoRoomsEnv:
                 return self.render()
 
     def step(self, action: np.ndarray) -> np.ndarray:
-        """action: (dx, dy) в [-1, 1]. Возвращает следующее наблюдение."""
         delta = np.clip(np.asarray(action, dtype=np.float32), -1, 1) * STEP
-        # пробуем полное движение, затем по осям (скольжение вдоль стен)
         for cand in (self.pos + delta,
                      self.pos + np.array([delta[0], 0.0]),
                      self.pos + np.array([0.0, delta[1]])):
@@ -62,5 +55,4 @@ class TwoRoomsEnv:
 
     @property
     def state(self) -> np.ndarray:
-        """Истинная позиция агента, нормированная в [0, 1] — для linear probe."""
         return self.pos / SIZE
