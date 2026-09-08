@@ -1,12 +1,3 @@
-"""Энкодер и предиктор для action-conditioned JEPA.
-
-Encoder:   картинка (1, 64, 64) -> латент z размерности latent_dim.
-Predictor: (z_t, a_t) -> предсказанный z_{t+1}.
-
-Размеры маленькие намеренно: на этой среде модель обучается за минуты,
-что позволяет быстро итерироваться. Когда перейдёшь на сложные среды,
-замени энкодер на ResNet/ViT — интерфейс останется тем же.
-"""
 import torch
 import torch.nn as nn
 
@@ -32,11 +23,6 @@ class Encoder(nn.Module):
 
 
 class Predictor(nn.Module):
-    """MLP-динамика: конкатенирует латент и действие, предсказывает следующий латент.
-
-    Идея: предсказываем дельту (z' = z + f(z, a)) — так проще выучить
-    тождество "ничего не изменилось" и стабильнее multi-step rollout.
-    """
     def __init__(self, latent_dim: int = 128, action_dim: int = 2, hidden: int = 256):
         super().__init__()
         self.net = nn.Sequential(
