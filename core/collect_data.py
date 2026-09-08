@@ -1,9 +1,3 @@
-"""Сбор датасета переходов (o_t, a_t, o_t+1, state_t) случайной политикой.
-
-Запуск:  python collect_data.py --transitions 50000 --out data/transitions.npz
-Коррелированные действия (инерция) дают более разнообразное покрытие карты,
-чем чисто белый шум.
-"""
 import argparse
 import os
 import numpy as np
@@ -18,7 +12,6 @@ def collect(n_transitions: int, episode_len: int = 200, seed: int = 0):
         o = env.reset()
         a = rng.uniform(-1, 1, size=2)
         for _ in range(episode_len):
-            # инерционная случайная политика: новое действие = сглаженное старое + шум
             a = np.clip(0.7 * a + 0.5 * rng.normal(size=2), -1, 1)
             s = env.state.copy()
             o_next = env.step(a)
