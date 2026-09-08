@@ -1,26 +1,3 @@
-"""Multi-seed повтор главной таблицы 2x2 (Table 1 в статье).
-
-Закрывает методологическую дыру, которую мы сами описали в Limitations:
-таблица 2x2 в первой версии статьи была построена на одиночных прогонах —
-том самом типе доказательства, ненадёжность которого демонстрирует
-landmark-sweep эксперимент (секция 4.3). Этот скрипт устраняет
-несогласованность: усредняет каждую из четырёх ячеек по нескольким seed,
-как уже сделано для landmark-density sweep.
-
-Четыре условия:
-  full  + instantaneous abstractor  (Abstractor как мгновенная MLP-проекция)
-  ego   + instantaneous abstractor
-  full  + recurrent abstractor      (Abstractor как GRU)
-  ego   + recurrent abstractor
-
-ВАЖНО: train_hier.py всегда использует РЕКУРРЕНТНЫЙ Abstractor (см.
-models_hier.py — Abstractor это GRU по построению, мгновенная версия была
-отдельным экспериментом раньше в разработке и не сохранилась как флаг).
-Чтобы честно повторить обе версии для статьи, здесь добавлена облегчённая
-мгновенная реализация тут же, без правки train_hier.py.
-
-Запуск:  python run_2x2_sweep.py --seeds 0 1 2 --episodes 200 --ep-len 48 --epochs 40 --k 8
-"""
 import argparse
 import json
 import numpy as np
@@ -65,10 +42,6 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     conditions = [("full", "recurrent"), ("ego", "recurrent")]
-    # примечание: инстантанс-абстрактор в текущем train_hier.py не отделён
-    # флагом (Abstractor всегда GRU) — эта развёртка повторяет именно
-    # recurrent-строки таблицы (те, что дали содержательный результат);
-    # instantaneous-строки исторические и не пересчитываются здесь.
 
     print(f"device: {device} | seeds: {args.seeds}\n")
     all_results = {}
