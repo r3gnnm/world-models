@@ -1,23 +1,3 @@
-"""Sanity-check ПЕРЕД переносом closed-loop на квадрокоптер: способен ли
-CEM вообще довести недоуправляемый дрон до точки, если дать ему ИСТИННУЮ
-физику вместо обученной модели?
-
-Зачем этот тест первым. Если CEM не справляется даже с идеальной динамикой
-(симулятором), то любые неудачи с обученной world model будут неотличимы
-от неудач самой постановки задачи — и мы будем месяц чинить модель там,
-где сломан планировщик. Это прямой урок из истории с L2-метрикой ранее в
-проекте: сначала изолируй, потом чини.
-
-Ключевые отличия от навигации в предыдущих средах:
-  - действие = (тяга, команда наклона), а не (dx, dy) — горизонтальное
-    движение возникает ТОЛЬКО через наклон корпуса (недоуправляемость)
-  - горизонт CEM должен быть заметно длиннее: измеренный эффект от разных
-    действий проявляется на ~15 шагах (1.2 с), а не на 3-5
-  - цель — долететь и по возможности стабилизироваться, а не просто
-    коснуться точки: у дрона есть инерция, он проскакивает цель
-
-Запуск:  python test_quad_cem.py --trials 10 --horizon 15
-"""
 import argparse
 import numpy as np
 
@@ -25,15 +5,6 @@ from env_quad2d import Quad2DEnv, SIZE, GROUND_Z, CEILING_Z
 
 
 def rollout_batch_true_physics(state, actions_batch, obs_pos, obs_r):
-    """ВЕКТОРИЗОВАННАЯ прокатка истинной физики для всей популяции CEM разом.
-
-    Дублирует формулы из Quad2DEnv.step, но батчем по numpy — цикл по 256
-    отдельным экземплярам среды слишком медленный для CEM на CPU
-    (замерено: полный прогон не укладывался в разумное время).
-
-    actions_batch: (P, H, 2) -> возвращает (final_pos (P,2), final_vel (P,2),
-    crashed (P,) bool)
-    """
     from env_quad2d import (DT, GRAVITY, MASS, THRUST_HOVER, THRUST_RANGE,
                             MAX_PITCH_RATE, MAX_PITCH, DRAG, ANG_DRAG, AGENT_R)
     P, H = actions_batch.shape[0], actions_batch.shape[1]
@@ -71,7 +42,6 @@ def rollout_batch_true_physics(state, actions_batch, obs_pos, obs_r):
 
 
 def rollout_true_physics(env_state, actions, obs_pos, obs_r):
-    """Одиночная прокатка (для отладки/совместимости)."""
     pos, vel, crashed = rollout_batch_true_physics(
         env_state, actions[None], obs_pos, obs_r)
     return pos[0], vel[0], bool(crashed[0])
@@ -79,8 +49,6 @@ def rollout_true_physics(env_state, actions, obs_pos, obs_r):
 
 def cem_plan_true(env, target, horizon=15, pop=256, iters=6, n_elites=32,
                   vel_penalty=0.3, crash_penalty=50.0, rng=None):
-    """CEM на истинной физике. cost = расстояние до цели в конце
-    + штраф за остаточную скорость (чтобы не проскакивал) + штраф за столкновение."""
     if rng is None:
         rng = np.random.default_rng(0)
     mean = np.zeros((horizon, 2))
@@ -104,7 +72,6 @@ def cem_plan_true(env, target, horizon=15, pop=256, iters=6, n_elites=32,
 def run_trial(seed, horizon, max_steps, success_dist, replan_every, rng):
     env = Quad2DEnv(seed=seed)
     env.reset()
-    # цель на разумном расстоянии, не в препятствии
     for _ in range(200):
         target = rng.uniform([20, GROUND_Z + 15], [SIZE - 20, CEILING_Z - 15])
         if not env._collides(target) and 20 < np.linalg.norm(target - env.pos) < 60:
