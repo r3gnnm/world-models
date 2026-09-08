@@ -1,18 +1,3 @@
-"""Обучение temporal-distance метрики (правильное решение проблемы L2).
-
-Идея: L2-расстояние в латенте не соответствует реальной достижимости
-(два состояния по разные стороны стены близки в пикселях, но далеки по числу
-шагов). Учим сеть d(z_a, z_b) ~ сколько шагов между состояниями.
-
-Обучающий сигнал берём бесплатно из траекторий: пары состояний, разделённые
-k шагами в одном эпизоде, должны иметь расстояние ~k. Отрицательные пары
-(из разных эпизодов / далёкие) — большое расстояние. Это self-supervised:
-разметка не нужна, всё из собранных переходов.
-
-Использование: замени в планировщике L2-cost на dist_net(z, z_goal).
-
-Запуск:  python train_distance.py --ckpt checkpoints/jepa_step8.pt
-"""
 import argparse
 import os
 import numpy as np
@@ -24,17 +9,15 @@ from models import Encoder
 
 
 class DistanceNet(nn.Module):
-    """Симметричная обучаемая метрика: d(z_a, z_b) >= 0."""
     def __init__(self, latent_dim=128, hidden=256):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(latent_dim * 2, hidden), nn.ReLU(),
             nn.Linear(hidden, hidden), nn.ReLU(),
-            nn.Linear(hidden, 1), nn.Softplus(),          # неотрицательный выход
+            nn.Linear(hidden, 1), nn.Softplus(),          
         )
 
     def forward(self, za, zb):
-        # симметризуем: d(a,b) = d(b,a)
         return 0.5 * (self.net(torch.cat([za, zb], -1)).squeeze(-1)
                       + self.net(torch.cat([zb, za], -1)).squeeze(-1))
 
@@ -46,22 +29,18 @@ def encode_episodes(enc, obs, ep_len, device, bs=512):
         zs.append(enc(obs[i:i + bs].to(device)).cpu())
     z = torch.cat(zs)
     n_ep = len(z) // ep_len
-    return z[: n_ep * ep_len].view(n_ep, ep_len, -1)      # (эпизоды, шаги, D)
+    return z[: n_ep * ep_len].view(n_ep, ep_len, -1)      
 
 
 def sample_batch(z_ep, max_k, device, bs=256):
     n_ep, ep_len, _ = z_ep.shape
     ei = torch.randint(0, n_ep, (bs,))
     ti = torch.randint(0, ep_len, (bs,))
-    # положительные: разделены k шагами внутри эпизода (target = точное k)
     k = torch.randint(1, max_k + 1, (bs,))
     tj = torch.clamp(ti + k, max=ep_len - 1)
     real_k = (tj - ti).float()
     za = z_ep[ei, ti].to(device)
     zb = z_ep[ei, tj].to(device)
-    # отрицательные: из другого эпизода. НЕ форсируем точное расстояние
-    # (многие такие пары реально близки из-за случайного reset),
-    # а лишь требуем "не ближе margin" через hinge — см. loss ниже.
     ej = torch.randint(0, n_ep, (bs,))
     zn = z_ep[ej, torch.randint(0, ep_len, (bs,))].to(device)
     return za, zb, real_k.to(device), zn
@@ -92,8 +71,8 @@ def main():
     margin = float(args.max_k)
     for step in range(1, args.steps + 1):
         za, zb, k, zn = sample_batch(z_ep, args.max_k, device)
-        pos = F.smooth_l1_loss(dist(za, zb), k)              # точное k для позитивов
-        neg = torch.relu(margin - dist(za, zn)).mean()      # hinge: не ближе margin
+        pos = F.smooth_l1_loss(dist(za, zb), k)              
+        neg = torch.relu(margin - dist(za, zn)).mean()      
         loss = pos + neg
         opt.zero_grad(); loss.backward(); opt.step()
         if step % 500 == 0:
@@ -105,14 +84,11 @@ def main():
                 "encoder_ckpt": args.ckpt}, args.out)
     print(f"Метрика расстояния сохранена в {args.out}")
 
-    # --- Встроенная диагностика: коррелирует ли метрика с реальным расстоянием? ---
     diagnose(enc, dist, args.data, device)
 
 
 @torch.no_grad()
 def diagnose(enc, dist, data_path, device, n_goals=5):
-    """Печатает корреляцию обученной метрики и L2 с реальным пространственным
-    расстоянием. Если обученная заметно выше L2 — метрика полезна для планирования."""
     import itertools
     from env import TwoRoomsEnv
     d = np.load(data_path)
