@@ -1,12 +1,3 @@
-"""Декодер латента в картинку (probe на замороженном энкодере).
-
-Важно: энкодер ЗАМОРОЖЕН. Декодер — это probe, он не влияет на представление,
-а лишь позволяет заглянуть внутрь: "как выглядит мир, который модель держит
-в латенте". JEPA специально обучалась без пиксельного лосса, поэтому декодер
-здесь — диагностический инструмент, а не часть модели.
-
-Запуск:  python train_decoder.py --ckpt checkpoints/jepa.pt --epochs 15
-"""
 import argparse
 import os
 import numpy as np
@@ -19,7 +10,6 @@ from models import Encoder
 
 
 class Decoder(nn.Module):
-    """Зеркало энкодера: латент -> (1, 64, 64)."""
     def __init__(self, latent_dim: int = 128):
         super().__init__()
         self.fc = nn.Linear(latent_dim, 128 * 4 * 4)
@@ -52,7 +42,7 @@ def main():
     ck = torch.load(args.ckpt, map_location=device, weights_only=True)
     enc = Encoder(ck["latent_dim"]).to(device).eval()
     enc.load_state_dict(ck["encoder"])
-    for prm in enc.parameters():          # заморозка энкодера
+    for prm in enc.parameters():          
         prm.requires_grad_(False)
 
     d = np.load(args.data)
