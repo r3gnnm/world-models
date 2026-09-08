@@ -1,12 +1,3 @@
-"""Оценка выученной world model.
-
-1) Linear probe: линейная регрессия из латента z в истинную позицию (x, y).
-   Высокий R^2 => представление содержит состояние мира.
-2) Multi-step rollout: катим предиктор на k шагов вперёд только по действиям
-   и меряем ошибку против латентов реальных кадров. Показывает compounding error.
-
-Запуск:  python eval_probe.py --data data/transitions.npz --ckpt checkpoints/jepa.pt
-"""
 import argparse
 import numpy as np
 import torch
@@ -27,7 +18,6 @@ def linear_probe(enc, data, device, n_train=20_000, n_test=5_000):
     z_tr, z_te = zs[:n_train], zs[n_train:]
     s_tr, s_te = states[:n_train], states[n_train:]
 
-    # ridge-регрессия в закрытой форме
     z_tr_b = torch.cat([z_tr, torch.ones(len(z_tr), 1, device=device)], 1)
     z_te_b = torch.cat([z_te, torch.ones(len(z_te), 1, device=device)], 1)
     reg = 1e-3 * torch.eye(z_tr_b.shape[1], device=device)
@@ -52,8 +42,8 @@ def rollout_error(enc, pred, device, horizon=30, n_episodes=50, seed=123):
         for k in range(horizon):
             a = np.clip(0.7 * a + 0.5 * rng.normal(size=2), -1, 1).astype(np.float32)
             o = env.step(a)
-            z = pred(z, torch.from_numpy(a[None]).to(device))     # воображение
-            z_real = enc(torch.from_numpy(o[None]).to(device))    # реальность
+            z = pred(z, torch.from_numpy(a[None]).to(device))     
+            z_real = enc(torch.from_numpy(o[None]).to(device))    
             errs[k] += torch.nn.functional.mse_loss(z, z_real).item()
     return errs / n_episodes
 
